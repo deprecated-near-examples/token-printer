@@ -50,7 +50,6 @@ class App extends React.Component {
     this.setState({
       numCreatedAccounts: await this._faucetContract.get_num_created_accounts(),
     });
-    // console.log(JSON.stringify([...key.getPublicKey().data]));
   }
 
   async initNear() {
@@ -307,8 +306,12 @@ class App extends React.Component {
     return (
       <div>
         <div>
-          <h1>NEAR Proof of Work Faucet</h1>
-          There were <span className="font-weight-bold">{this.state.numCreatedAccounts} accounts</span> created using this faucet.
+          <h1>Token Printer</h1>
+          <div>
+            <img src="https://media2.giphy.com/media/3o6Zt3AX5mSM29lGUw/source.gif" alt="Yo, Cash"/>
+          </div>
+          <p>There were <span className="font-weight-bold">{this.state.numCreatedAccounts} accounts</span> funded.</p>
+          <p>Total <span className="font-weight-bold">{this.state.numCreatedAccounts} Ⓝ</span> tokens.</p>
         </div>
         <hr/>
         {content}

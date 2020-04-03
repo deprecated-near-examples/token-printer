@@ -1,30 +1,31 @@
-Proof of Work Faucet
-====================
+Proof of Work Transfer Faucet
+=============================
 
 <!-- MAGIC COMMENT: DO NOT DELETE! Everything above this line is hidden on NEAR Examples page -->
 
-Try it out: https://near-examples.github.io/pow-faucet/
+Try it out: https://near-examples.github.io/token-printer/
 
 It consists of 2 parts:
 
-## Faucet contract
+## Transfer Faucet contract
 
-A Faucet contract that creates and funds accounts if the caller provides basic proof of work
-to avoid sybil attacks and draining balance too fast.
+A Faucet contract allows to transfer tokens to a desired account for doing required Proof of Work.
+This contract is based on PoW faucet example: https://github.com/near-examples/pow-faucet
 
-The new account always receives 1/1000 of the remaining balance.
+The transfer amount is set to 100N tokens. It's enough to deploy a 1Mb contract.
 
 Proof of Work works the following way:
 
-You need to compute a u64 salt (nonce) for a given account and a given public key in such a way
-that the `sha256(account_id + ':' + public_key + ':' + salt)` has at the amount of leading zero bits as
-the required `min_difficulty`.
+You need to compute a u64 salt (nonce) for a given account in such a way
+that the `sha256(account_id + ':' + salt)` has at the amount of leading zero bits as
+the required `min_difficulty`. The hash has to be unique in order to receive transfer.
+One account can request multiple transfers.
 
 ## Faucet frontend
 
-Allows to create a new account with suffix `.meta` by computing the Proof of Work required by the contract using front-end JS.
+Allows to enter the account ID to receive transfer. And it computes the Proof of Work required by the contract using front-end JS.
 
-https://near-examples.github.io/pow-faucet/
+https://near-examples.github.io/token-printer/
 
 ## Testing
 To test run:

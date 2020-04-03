@@ -1,33 +1,36 @@
 use borsh::{BorshDeserialize, BorshSerialize};
-use near_bindgen::{env, near_bindgen, Promise, PromiseOrValue};
-use near_bindgen::collections::Set;
+use near_sdk::{env, near_bindgen, Promise};
+use near_sdk::collections::Set;
 
 #[global_allocator]
 static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
+mod types;
+use types::{U128, StrPublicKey};
+
 pub type AccountId = String;
-pub type PublicKey = Vec<u8>;
 pub type Salt = u64;
 
-/// A Faucet contract that creates and funds accounts if the caller provides basic proof of work
-/// to avoid sybil attacks and draining balance too fast.
-/// The new account always receives 1/1000 of the remaining balance.
+/// A Transfer PoW Faucet contract that allows to request token transfer towards a given account.
+/// It uses basic proof of work to avoid sybil attacks.
+/// The new account always receives selected amount of tokens.
 /// Proof of Work works the following way:
-/// You need to compute a u64 salt (nonce) for a given account and a given public key in such a way
-/// that the `sha256(account_id + ':' + public_key + ':' + salt)` has more leading zero bits than
-/// the required `min_difficulty`.
+/// You need to compute a u64 salt (nonce) for a given account in such a way
+/// that the `sha256(account_id + ':' + salt)` has more leading zero bits than
+/// the required `min_difficulty`. The hash has to be unique in order to receive transfer.
+/// One account can request multiple transfers.
 #[near_bindgen]
 #[derive(BorshDeserialize, BorshSerialize)]
-pub struct Faucet {
-    /// Account ID which will be a suffix for each account (including a '.' separator).
-    pub account_suffix: AccountId,
+pub struct TransferFaucet {
+    /// Transfer amount
+    pub transfer_amount: u128,
     /// Number of leading zeros in binary representation for a hash
     pub min_difficulty: u32,
     /// Created accounts
-    pub created_accounts: Set<AccountId>,
+    pub existing_hashes: Set<Vec<u8>>,
 }
 
-impl Default for Faucet {
+impl Default for TransferFaucet {
     fn default() -> Self {
         panic!("Faucet is not initialized yet")
     }
@@ -50,41 +53,31 @@ fn assert_self() {
 }
 
 #[near_bindgen]
-impl Faucet {
+impl TransferFaucet {
     #[init]
-    pub fn new(account_suffix: AccountId, min_difficulty: u32) -> Self {
+    pub fn new(transfer_amount: U128, min_difficulty: u32) -> Self {
         assert!(env::state_read::<Self>().is_none(), "Already initialized");
         Self {
-            account_suffix,
+            transfer_amount: transfer_amount.into(),
             min_difficulty,
-            created_accounts: Set::new(b"a".to_vec())
+            existing_hashes: Set::new(b"h".to_vec())
         }
     }
 
-    pub fn get_account_suffix(&self) -> AccountId {
-        self.account_suffix.clone()
-    }
+    pub fn get_transfer_amount(&self) -> U128 { self.transfer_amount.into() }
 
     pub fn get_min_difficulty(&self) -> u32 {
         self.min_difficulty
     }
 
-    pub fn get_num_created_accounts(&self) -> u64 {
-        self.created_accounts.len()
+    pub fn get_num_transfers(&self) -> u64 {
+        self.existing_hashes.len()
     }
 
-    pub fn create_account(&mut self, account_id: AccountId, public_key: PublicKey, salt: Salt) -> PromiseOrValue<()> {
-        // Checking account_id suffix first.
-        assert!(account_id.ends_with(&self.account_suffix), "Account has to end with the suffix");
-
-        // Checking that the given account is not created yet.
-        assert!(!self.created_accounts.contains(&account_id), "The given given account is already created");
-
+    pub fn request_transfer(&mut self, account_id: AccountId, salt: Salt) -> Promise {
         // Checking proof of work
         //     Constructing a message for checking
         let mut message = account_id.as_bytes().to_vec();
-        message.push(b':');
-        message.extend_from_slice(&public_key);
         message.push(b':');
         message.extend_from_slice(&salt.to_le_bytes());
         //     Computing hash of the message
@@ -92,17 +85,13 @@ impl Faucet {
         //     Checking that the resulting hash has enough leading zeros.
         assert!(num_leading_zeros(&hash) >= self.min_difficulty, "The proof is work is too weak");
 
-        // All checks are good, let's proceed by creating an account
+        // Checking that the given hash is not used yet and remembering it.
+        assert!(!self.existing_hashes.insert(&hash), "The given hash is already used for transfer");
 
-        // Save that we already has created an account.
-        self.created_accounts.insert(&account_id);
-
-        // Creating new account. It still can fail (e.g. account already exists or name is invalid),
-        // but we don't care, we'll get a refund back.
+        // Creating a transfer. It still can fail (e.g. account doesn't exists or the name is invalid),
+        // but this contract will get the refund back.
         Promise::new(account_id)
-            .create_account()
-            .transfer(env::account_balance() / 1000)
-            .add_full_access_key(public_key)
+            .transfer(self.transfer_amount)
             .into()
     }
 
@@ -113,14 +102,19 @@ impl Faucet {
         self.min_difficulty = min_difficulty;
     }
 
-    pub fn add_access_key(&mut self, public_key: PublicKey) -> PromiseOrValue<()> {
+    pub fn set_transfer_amount(&mut self, transfer_amount: U128) {
+        assert_self();
+        self.transfer_amount = transfer_amount.into();
+    }
+
+    pub fn add_access_key(&mut self, public_key: StrPublicKey) -> Promise {
         assert_self();
         Promise::new(env::current_account_id())
             .add_access_key(
-                public_key,
+                public_key.into(),
                 0,
                 env::current_account_id(),
-                b"create_account".to_vec(),
+                b"request_transfer".to_vec(),
             )
             .into()
     }
@@ -129,9 +123,9 @@ impl Faucet {
 #[cfg(not(target_arch = "wasm32"))]
 #[cfg(test)]
 mod tests {
-    use near_bindgen::{testing_env, VMContext};
-    use near_bindgen::MockedBlockchain;
+    use near_sdk::{MockedBlockchain, testing_env, VMContext};
     use std::panic;
+    use std::convert::TryFrom;
 
     use super::*;
 
@@ -152,9 +146,9 @@ mod tests {
             input: vec![],
             block_index: 0,
             block_timestamp: 0,
-            account_balance: 0,
+            account_balance: 10u128.pow(30),
             account_locked_balance: 0,
-            storage_usage: 10u64.pow(6),
+            storage_usage: 100,
             attached_deposit: 0,
             prepaid_gas: 10u64.pow(15),
             random_seed: vec![0, 1, 2],
@@ -167,26 +161,40 @@ mod tests {
     fn test_new() {
         let context = get_context();
         testing_env!(context);
-        let account_suffix = ".alice".to_string();
+        let transfer_amount = 100 * 10u128.pow(24);
         let min_difficulty = 5;
-        let contract = Faucet::new(account_suffix.clone(), min_difficulty);
-        assert_eq!(contract.get_account_suffix(), account_suffix);
+        let contract = TransferFaucet::new(transfer_amount.into(), min_difficulty);
         assert_eq!(contract.get_min_difficulty(), min_difficulty);
-        assert_eq!(contract.get_num_created_accounts(), 0);
+        assert_eq!(contract.get_transfer_amount().0, transfer_amount);
+        assert_eq!(contract.get_num_transfers(), 0);
     }
 
     #[test]
-    fn test_create_account_ok() {
+    fn test_request_transfer_ok() {
         let context = get_context();
-        testing_env!(context);
-        let account_suffix = ".alice".to_string();
-        let min_difficulty = 20;
-        let mut contract = Faucet::new(account_suffix.clone(), min_difficulty);
+        testing_env!(context.clone());
+        let transfer_amount = 100 * 10u128.pow(24);
+        let min_difficulty = 5;
         let account_id = "test.alice";
-        let public_key = vec![0u8; 33];
-        let salt = 89949;
-        contract.create_account(account_id.to_string(), public_key, salt);
-        assert_eq!(contract.get_num_created_accounts(), 1);
+        let mut contract = TransferFaucet::new(transfer_amount.into(), min_difficulty);
+        let mut salt: u64 = 0;
+        loop {
+            // To avoid draining all gas
+            testing_env!(context.clone());
+            let mut message = account_id.as_bytes().to_vec();
+            message.push(b':');
+            message.extend_from_slice(&salt.to_le_bytes());
+            //     Computing hash of the message
+            let hash = env::sha256(&message);
+            //     Checking that the resulting hash has enough leading zeros.
+            if num_leading_zeros(&hash) >= min_difficulty {
+                break;
+            }
+            salt += 1;
+        };
+        println!("Salt is {}", salt);
+        contract.request_transfer(account_id.to_string(), salt);
+        assert_eq!(contract.get_num_transfers(), 1);
     }
 
     #[test]
@@ -194,40 +202,25 @@ mod tests {
         let context = get_context();
         testing_env!(context);
         catch_unwind_silent(|| {
-            Faucet::default();
+            TransferFaucet::default();
         }).unwrap_err();
     }
 
     #[test]
-    fn test_fail_create_account_bad_name() {
+    fn test_fail_request_transfer_already_used() {
         let context = get_context();
         testing_env!(context);
-        let account_suffix = ".alice".to_string();
-        let min_difficulty = 0;
-        let mut contract = Faucet::new(account_suffix.clone(), min_difficulty);
-        let account_id = "bob";
-        let public_key = vec![0u8; 33];
-        let salt = 0;
-        catch_unwind_silent(move || {
-            contract.create_account(account_id.to_string(), public_key, salt);
-        }).unwrap_err();
-    }
-
-    #[test]
-    fn test_fail_create_account_already_created() {
-        let context = get_context();
-        testing_env!(context);
-        let account_suffix = ".alice".to_string();
-        let min_difficulty = 10;
-        let mut contract = Faucet::new(account_suffix.clone(), min_difficulty);
+        let transfer_amount = 100 * 10u128.pow(24);
+        let min_difficulty = 5;
+        let mut contract = TransferFaucet::new(transfer_amount.into(), min_difficulty);
         let account_id = "test.alice";
-        let public_key = vec![0u8; 33];
-        let salt = 123;
-        contract.create_account(account_id.to_string(), public_key.clone(), salt);
+        let salt = 58;
+        contract.request_transfer(account_id.to_string(), salt);
         catch_unwind_silent(move || {
-            contract.create_account(account_id.to_string(), public_key, salt);
+            contract.request_transfer(account_id.to_string(), salt);
         }).unwrap_err();
     }
+
 
     #[test]
     fn test_num_leading_zeros() {
@@ -240,5 +233,29 @@ mod tests {
         assert_eq!(num_leading_zeros(&[1u8; 4]), 7);
         assert_eq!(num_leading_zeros(&[0u8, 0u8, 255u8 >> 3]), 19);
         assert_eq!(num_leading_zeros(&[0u8, 0u8, 255u8 >> 3, 0u8]), 19);
+    }
+
+    #[test]
+    fn test_add_access_key() {
+        let mut context = get_context();
+        context.predecessor_account_id = "alice".to_string();
+        testing_env!(context);
+        let transfer_amount = 100 * 10u128.pow(24);
+        let min_difficulty = 5;
+        let mut contract = TransferFaucet::new(transfer_amount.into(), min_difficulty);
+        contract.add_access_key(StrPublicKey::try_from("ed25519:CFsEoaPizaj2uPP5StphygRTVugh1anqG8JpiGzpFHs").unwrap());
+    }
+
+    #[test]
+    fn test_bad_public_key() {
+        let mut context = get_context();
+        context.predecessor_account_id = "alice".to_string();
+        testing_env!(context);
+        let transfer_amount = 100 * 10u128.pow(24);
+        let min_difficulty = 5;
+        let mut contract = TransferFaucet::new(transfer_amount.into(), min_difficulty);
+        catch_unwind_silent(move || {
+            contract.add_access_key(StrPublicKey::try_from("ed25519:CFsEoaPTVugh1anqG8JpiGzpFHs").unwrap());
+        }).unwrap_err();
     }
 }
