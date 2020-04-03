@@ -1,13 +1,17 @@
 import React from 'react';
+import BN from 'bn.js';
 import * as nearlib from 'nearlib';
-import { generateSeedPhrase } from 'near-seed-phrase';
 
-const FaucetPrivateKey = 'ed25519:2Rtn6ms22rCRMgmGgLRSPPd6gYDCgWDuFrX6gERknSA8GKiCHE5L9Rksc1ihsSCDvMSptfbipzq29H7cDZhR1Ze3';
-const FaucetName = 'meta';
+const FaucetPrivateKey = 'ed25519:4a5T9u2ek3xNwP74EWZ8n94RBpWzj8ofgEzeNkLv2XqypomDyRpU2ENGrf9qBkuDCy9b8dat7TGiK4h649yYAd2j';
+const FaucetName = 'token-printer';
 const MinAccountIdLen = 2;
 const MaxAccountIdLen = 64;
 const ValidAccountRe = /^(([a-z\d]+[-_])*[a-z\d]+\.)*([a-z\d]+[-_])*[a-z\d]+$/;
-const AuthDataKey = "meta-faucet-auth-data";
+const OneNear = new BN("1000000000000000000000000");
+
+
+const fromYocto = (a) => a / OneNear;
+const brrr = (n) => "B" + "R".repeat(n);
 
 class App extends React.Component {
   constructor(props) {
@@ -16,19 +20,17 @@ class App extends React.Component {
     this.state = {
       connected: false,
       signedIn: false,
-      accountId: null,
-      newAccountId: "",
-      creating: false,
+      accountId: "",
+      requesting: false,
       accountLoading: false,
-      newAccountExists: false,
+      accountExists: false,
       computingProofOfWork: false,
+      numTransfers: 0,
     };
 
     this.initNear().then(() => {
       this.setState({
         connected: true,
-        signedIn: !!this._authData.accountId,
-        accountId: this._authData.accountId,
       })
     })
   }
@@ -41,14 +43,14 @@ class App extends React.Component {
     }
     const account = new nearlib.Account(this._near.connection, FaucetName);
     this._faucetContract =  new nearlib.Contract(account, FaucetName, {
-      viewMethods: ['get_min_difficulty', 'get_account_suffix', 'get_num_created_accounts'],
-      changeMethods: ['create_account'],
+      viewMethods: ['get_min_difficulty', 'get_transfer_amount', 'get_num_transfers'],
+      changeMethods: ['request_transfer'],
       sender: FaucetName
     });
-    this._accountSuffix = await this._faucetContract.get_account_suffix();
+    this._transferAmount = new BN(await this._faucetContract.get_transfer_amount());
     this._minDifficulty = await this._faucetContract.get_min_difficulty();
     this.setState({
-      numCreatedAccounts: await this._faucetContract.get_num_created_accounts(),
+      numTransfers: await this._faucetContract.get_num_transfers(),
     });
   }
 
@@ -65,7 +67,6 @@ class App extends React.Component {
     this._nearConfig = nearConfig;
     this._near = near;
 
-    this._authData = JSON.parse(window.localStorage.getItem(AuthDataKey) || '{}');
     await this.initFaucet();
   }
 
@@ -73,24 +74,24 @@ class App extends React.Component {
     const stateChange = {
       [key]: value,
     };
-    if (key === 'newAccountId') {
+    if (key === 'accountId') {
       value = value.toLowerCase().replace(/[^a-z0-9\-_.]/, '');
       stateChange[key] = value;
-      stateChange.newAccountExists = false;
+      stateChange.accountExists = false;
       if (this.isValidAccount(value)) {
         stateChange.accountLoading = true;
-        this._near.connection.provider.query(`account/${value + this._accountSuffix}`, '').then((_a) => {
-          if (this.state.newAccountId === value) {
+        this._near.connection.provider.query(`account/${value}`, '').then((_a) => {
+          if (this.state.accountId === value) {
             this.setState({
               accountLoading: false,
-              newAccountExists: true,
+              accountExists: true,
             })
           }
         }).catch((e) => {
-          if (this.state.newAccountId === value) {
+          if (this.state.accountId === value) {
             this.setState({
               accountLoading: false,
-              newAccountExists: false,
+              accountExists: false,
             })
           }
         })
@@ -99,40 +100,34 @@ class App extends React.Component {
     this.setState(stateChange);
   }
 
-  isValidAccount(newAccountId) {
-    if (newAccountId.includes('.')) {
-      return false;
-    }
-    const accountId = newAccountId + this._accountSuffix;
+  isValidAccount(accountId) {
     return accountId.length >= MinAccountIdLen &&
         accountId.length <= MaxAccountIdLen &&
         accountId.match(ValidAccountRe);
   }
 
-  newAccountClass() {
-    if (!this.state.newAccountId || this.state.accountLoading) {
+  accountClass() {
+    if (!this.state.accountId || this.state.accountLoading) {
       return "form-control form-control-large";
-    } else if (!this.state.newAccountExists && this.isValidAccount(this.state.newAccountId)) {
+    } else if (this.state.accountExists && this.isValidAccount(this.state.accountId)) {
       return "form-control form-control-large is-valid";
     } else {
       return "form-control form-control-large is-invalid";
     }
   }
 
-  async computeProofOfWork(accountId, publicKey) {
+  async computeProofOfWork(accountId, initialSalt) {
     let msg = [...new TextEncoder('utf-8').encode(accountId + ':')];
-    // curve
-    msg.push(0);
-    // key
-    msg.push(...publicKey.data);
-    // separator
-    msg.push(':'.charCodeAt(0));
     // salt
-    msg.push(0, 0, 0, 0, 0, 0, 0, 0);
+    let t = initialSalt;
+    for (let i = 0; i < 8; ++i) {
+      msg.push(t & 255);
+      t = Math.floor(t / 256);
+    }
     msg = new Uint8Array(msg);
     const len = msg.length;
     let bestDifficulty = 0;
-    for (let salt = 0; ; ++salt) {
+    for (let salt = initialSalt; ; ++salt) {
       // compute hash
       const hashBuffer = new Uint8Array(await crypto.subtle.digest('SHA-256', msg));
       // compute number of leading zero bits
@@ -155,11 +150,11 @@ class App extends React.Component {
         this.setState({
           proofOfWorkProgress: Math.trunc(bestDifficulty * 100 / this._minDifficulty),
           proofOfWorkDifficulty: bestDifficulty,
-          proofOfWorkSalt: salt,
+          proofOfWorkSalt: salt - initialSalt,
         });
       } else if (salt % 10000 === 0) {
         this.setState({
-          proofOfWorkSalt: salt
+          proofOfWorkSalt: salt - initialSalt,
         });
       }
       // incrementing salt
@@ -174,135 +169,89 @@ class App extends React.Component {
     }
   }
 
-  async createAccount() {
+  async requestTransfer() {
     this.setState({
-      creating: true,
+      requesting: true,
       computingProofOfWork: true,
       proofOfWorkProgress: 0,
       proofOfWorkDifficulty: 0,
       proofOfWorkSalt: 0,
     })
-    const newAccountId = this.state.newAccountId + this._accountSuffix;
-    const seed = generateSeedPhrase();
-    const newKeyPair = nearlib.KeyPair.fromString(seed.secretKey);
-    const salt = await this.computeProofOfWork(newAccountId, newKeyPair.getPublicKey());
-    await this._faucetContract.create_account({
-      account_id: newAccountId,
-      public_key: [0, ...newKeyPair.getPublicKey().data],
+    const accountId = this.state.accountId;
+    const salt = await this.computeProofOfWork(accountId, new Date().getTime())
+    await this._faucetContract.request_transfer({
+      account_id: accountId,
       salt,
     });
-    await this._keyStore.setKey(this._nearConfig.networkId, newAccountId, newKeyPair);
-    this._authData = {
-      accountId: newAccountId,
-      seed,
-    };
-    window.localStorage.setItem(AuthDataKey, JSON.stringify(this._authData));
     this.setState({
-      signedIn: true,
-      accountId: newAccountId,
-      creating: false,
-      numCreatedAccounts: await this._faucetContract.get_num_created_accounts(),
+      requesting: false,
+      numTransfers: await this._faucetContract.get_num_transfers(),
     })
-  }
-
-  moveAccountToWallet() {
-    window.location = `https://wallet.nearprotocol.com/recover-with-link/${this._authData.accountId}/${this._authData.seed.seedPhrase}`;
-  }
-
-  logout() {
-    window.localStorage.removeItem(AuthDataKey);
-    this._authData = {};
-    this.setState({
-      signedIn: false,
-      accountId: null,
-      newAccountId: "",
-      creating: false,
-      accountLoading: false,
-      newAccountExists: false,
-      computingProofOfWork: false,
-    });
   }
 
   render() {
     const content = !this.state.connected ? (
       <div>Connecting... <span className="spinner-grow spinner-grow-sm" role="status" aria-hidden="true"></span></div>
-    ) : (this.state.signedIn ? (
-      <div>
-        <h3>Hello, {this.state.accountId}</h3>
-        <div className="form-group">
-          <button
-            className="btn btn-success"
-            onClick={() => this.moveAccountToWallet()}
-          >
-            Move account to NEAR Wallet
-          </button>
-        </div>
-        <div className="form-group">
-          <button
-            className="btn btn-danger"
-            onClick={() => this.logout()}
-          >
-            Logout from Faucet
-          </button>
-        </div>
-      </div>
     ) : (
       <div>
         <div className="form-group">
-          <label htmlFor="accountId">Create a new account</label>
+          <label htmlFor="accountId">Ask to print <span className="font-weight-bold">{fromYocto(this._transferAmount)} Ⓝ</span> for account ID</label>
           <div className="input-group">
             <div className="input-group-prepend">
               <div className="input-group-text">{"@"}</div>
             </div>
             <input
-              placeholder="bob"
+              placeholder="eugenethedream"
               id="accountId"
-              className={this.newAccountClass()}
-              value={this.state.newAccountId}
-              onChange={(e) => this.handleChange('newAccountId', e.target.value)}
-              disabled={this.state.creating}
+              className={this.accountClass()}
+              value={this.state.accountId}
+              onChange={(e) => this.handleChange('accountId', e.target.value)}
+              disabled={this.state.requesting}
             />
-            <div className="input-group-append">
-              <div className="input-group-text">{this._accountSuffix}</div>
-            </div>
           </div>
         </div>
-        {this.state.newAccountExists && (
+        {this.state.accountId && !this.state.accountLoading && !this.state.accountExists && (
           <div className="alert alert-warning" role="alert">
-            Account {'"' + this.state.newAccountId + this._accountSuffix + '"'} already exists!
+            Account {'@' + this.state.accountId} doesn't exist! You may want to try create it with <a href="https://near-examples.github.io/pow-faucet/">PoW Faucet</a>
           </div>
         )}
         <div className="form-group">
           <button
             className="btn btn-primary"
-            disabled={this.state.creating || this.state.accountLoading || this.state.newAccountExists || !this.isValidAccount(this.state.newAccountId)}
-            onClick={() => this.createAccount()}
+            disabled={this.state.requesting || this.state.accountLoading || !this.state.accountExists || !this.isValidAccount(this.state.accountId)}
+            onClick={() => this.requestTransfer()}
           >
-            {(this.state.creating || this.state.accountLoading) && (
+            {(this.state.requesting || this.state.accountLoading) && (
               <span className="spinner-grow spinner-grow-sm" role="status" aria-hidden="true"></span>
-            )} Create Account {this.isValidAccount(this.state.newAccountId) ? ('"' + this.state.newAccountId + this._accountSuffix + '"') : ""}
+            )} Request {fromYocto(this._transferAmount)} Ⓝ
           </button>
         </div>
-        {this.state.creating && (
+        {this.state.requesting && (
           <div>
             {this.state.computingProofOfWork ? (
               <div>
-                Computing Proof of Work. Done {this.state.proofOfWorkSalt} operations.
+                Token printer goes {brrr(this.state.proofOfWorkSalt / 10000)}.
                 <div className="progress">
                   <div className="progress-bar" role="progressbar" style={{width: this.state.proofOfWorkProgress + '%'}} aria-valuenow={this.state.proofOfWorkProgress} aria-valuemin="0"
-                       aria-valuemax="100">{this.state.proofOfWorkDifficulty} out of {this._minDifficulty}
+                       aria-valuemax="100">{brrr(this.state.proofOfWorkDifficulty)} out of {brrr(this._minDifficulty)}
                   </div>
+                </div>
+                <div>
+                  <img src="https://i.kym-cdn.com/photos/images/original/001/789/428/a01.gif" alt="BRRRRR"/>
                 </div>
               </div>
             ) : (
               <div>
-                Proof of Work is Done! Creating account {'"' + this.state.newAccountId + this._accountSuffix + '"'}
+                Printing is Done! Delivering.<br/>
+                <div>
+                  <img src="https://media0.giphy.com/media/11VKF3OwuGHzNe/source.gif" alt="Delivering"/>
+                </div>
               </div>
             )}
           </div>
         )}
       </div>
-    ));
+    );
     return (
       <div>
         <div>
@@ -310,8 +259,8 @@ class App extends React.Component {
           <div>
             <img src="https://media2.giphy.com/media/3o6Zt3AX5mSM29lGUw/source.gif" alt="Yo, Cash"/>
           </div>
-          <p>There were <span className="font-weight-bold">{this.state.numCreatedAccounts} accounts</span> funded.</p>
-          <p>Total <span className="font-weight-bold">{this.state.numCreatedAccounts} Ⓝ</span> tokens.</p>
+          <p>There were <span className="font-weight-bold">{this.state.numTransfers} accounts</span> funded and
+            total <span className="font-weight-bold">{fromYocto(this.state.numTransfers * this._transferAmount)} Ⓝ</span> tokens were printed.</p>
         </div>
         <hr/>
         {content}
