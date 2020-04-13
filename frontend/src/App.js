@@ -1,6 +1,6 @@
 import React from 'react';
 import BN from 'bn.js';
-import * as nearlib from 'nearlib';
+import * as nearAPI from 'near-api-js';
 
 const FaucetPrivateKey = 'ed25519:4a5T9u2ek3xNwP74EWZ8n94RBpWzj8ofgEzeNkLv2XqypomDyRpU2ENGrf9qBkuDCy9b8dat7TGiK4h649yYAd2j';
 const FaucetName = 'token-printer';
@@ -38,11 +38,11 @@ class App extends React.Component {
   async initFaucet() {
     let key = await this._keyStore.getKey(this._nearConfig.networkId, FaucetName);
     if (!key) {
-      const keyPair = nearlib.KeyPair.fromString(FaucetPrivateKey);
+      const keyPair = nearAPI.KeyPair.fromString(FaucetPrivateKey);
       await this._keyStore.setKey(this._nearConfig.networkId, FaucetName, keyPair);
     }
-    const account = new nearlib.Account(this._near.connection, FaucetName);
-    this._faucetContract =  new nearlib.Contract(account, FaucetName, {
+    const account = new nearAPI.Account(this._near.connection, FaucetName);
+    this._faucetContract =  new nearAPI.Contract(account, FaucetName, {
       viewMethods: ['get_min_difficulty', 'get_transfer_amount', 'get_num_transfers'],
       changeMethods: ['request_transfer'],
       sender: FaucetName
@@ -61,8 +61,8 @@ class App extends React.Component {
       contractName: FaucetName,
       walletUrl: 'https://wallet.nearprotocol.com',
     };
-    const keyStore = new nearlib.keyStores.BrowserLocalStorageKeyStore();
-    const near = await nearlib.connect(Object.assign({ deps: { keyStore } }, nearConfig));
+    const keyStore = new nearAPI.keyStores.BrowserLocalStorageKeyStore();
+    const near = await nearAPI.connect(Object.assign({ deps: { keyStore } }, nearConfig));
     this._keyStore = keyStore;
     this._nearConfig = nearConfig;
     this._near = near;
