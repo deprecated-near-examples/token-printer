@@ -1,12 +1,10 @@
 use borsh::{BorshDeserialize, BorshSerialize};
-use near_sdk::{env, near_bindgen, Promise};
 use near_sdk::collections::Set;
+use near_sdk::json_types::{Base58PublicKey, U128};
+use near_sdk::{env, near_bindgen, Promise};
 
 #[global_allocator]
 static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
-
-mod types;
-use types::{U128, StrPublicKey};
 
 pub type AccountId = String;
 pub type Salt = u64;
@@ -49,7 +47,11 @@ fn num_leading_zeros(v: &[u8]) -> u32 {
 }
 
 fn assert_self() {
-    assert_eq!(env::current_account_id(), env::predecessor_account_id(), "Can only be called by owner");
+    assert_eq!(
+        env::current_account_id(),
+        env::predecessor_account_id(),
+        "Can only be called by owner"
+    );
 }
 
 #[near_bindgen]
@@ -60,11 +62,13 @@ impl TransferFaucet {
         Self {
             transfer_amount: transfer_amount.into(),
             min_difficulty,
-            existing_hashes: Set::new(b"h".to_vec())
+            existing_hashes: Set::new(b"h".to_vec()),
         }
     }
 
-    pub fn get_transfer_amount(&self) -> U128 { self.transfer_amount.into() }
+    pub fn get_transfer_amount(&self) -> U128 {
+        self.transfer_amount.into()
+    }
 
     pub fn get_min_difficulty(&self) -> u32 {
         self.min_difficulty
@@ -83,10 +87,16 @@ impl TransferFaucet {
         //     Computing hash of the message
         let hash = env::sha256(&message);
         //     Checking that the resulting hash has enough leading zeros.
-        assert!(num_leading_zeros(&hash) >= self.min_difficulty, "The proof is work is too weak");
+        assert!(
+            num_leading_zeros(&hash) >= self.min_difficulty,
+            "The proof is work is too weak"
+        );
 
         // Checking that the given hash is not used yet and remembering it.
-        assert!(!self.existing_hashes.insert(&hash), "The given hash is already used for transfer");
+        assert!(
+            self.existing_hashes.insert(&hash),
+            "The given hash is already used for transfer"
+        );
 
         // Creating a transfer. It still can fail (e.g. account doesn't exists or the name is invalid),
         // but this contract will get the refund back.
@@ -107,7 +117,7 @@ impl TransferFaucet {
         self.transfer_amount = transfer_amount.into();
     }
 
-    pub fn add_access_key(&mut self, public_key: StrPublicKey) -> Promise {
+    pub fn add_access_key(&mut self, public_key: Base58PublicKey) -> Promise {
         assert_self();
         Promise::new(env::current_account_id())
             .add_access_key(
@@ -123,13 +133,15 @@ impl TransferFaucet {
 #[cfg(not(target_arch = "wasm32"))]
 #[cfg(test)]
 mod tests {
-    use near_sdk::{MockedBlockchain, testing_env, VMContext};
-    use std::panic;
+    use near_sdk::{testing_env, MockedBlockchain, VMContext};
     use std::convert::TryFrom;
+    use std::panic;
 
     use super::*;
 
-    fn catch_unwind_silent<F: FnOnce() -> R + panic::UnwindSafe, R>(f: F) -> std::thread::Result<R> {
+    fn catch_unwind_silent<F: FnOnce() -> R + panic::UnwindSafe, R>(
+        f: F,
+    ) -> std::thread::Result<R> {
         let prev_hook = panic::take_hook();
         panic::set_hook(Box::new(|_| {}));
         let result = panic::catch_unwind(f);
@@ -154,6 +166,7 @@ mod tests {
             random_seed: vec![0, 1, 2],
             is_view: false,
             output_data_receivers: vec![],
+            epoch_height: 0,
         }
     }
 
@@ -191,7 +204,7 @@ mod tests {
                 break;
             }
             salt += 1;
-        };
+        }
         println!("Salt is {}", salt);
         contract.request_transfer(account_id.to_string(), salt);
         assert_eq!(contract.get_num_transfers(), 1);
@@ -203,7 +216,8 @@ mod tests {
         testing_env!(context);
         catch_unwind_silent(|| {
             TransferFaucet::default();
-        }).unwrap_err();
+        })
+        .unwrap_err();
     }
 
     #[test]
@@ -218,9 +232,9 @@ mod tests {
         contract.request_transfer(account_id.to_string(), salt);
         catch_unwind_silent(move || {
             contract.request_transfer(account_id.to_string(), salt);
-        }).unwrap_err();
+        })
+        .unwrap_err();
     }
-
 
     #[test]
     fn test_num_leading_zeros() {
@@ -243,7 +257,10 @@ mod tests {
         let transfer_amount = 100 * 10u128.pow(24);
         let min_difficulty = 5;
         let mut contract = TransferFaucet::new(transfer_amount.into(), min_difficulty);
-        contract.add_access_key(StrPublicKey::try_from("ed25519:CFsEoaPizaj2uPP5StphygRTVugh1anqG8JpiGzpFHs").unwrap());
+        contract.add_access_key(
+            Base58PublicKey::try_from("ed25519:CFsEoaPizaj2uPP5StphygRTVugh1anqG8JpiGzpFHs")
+                .unwrap(),
+        );
     }
 
     #[test]
@@ -255,7 +272,10 @@ mod tests {
         let min_difficulty = 5;
         let mut contract = TransferFaucet::new(transfer_amount.into(), min_difficulty);
         catch_unwind_silent(move || {
-            contract.add_access_key(StrPublicKey::try_from("ed25519:CFsEoaPTVugh1anqG8JpiGzpFHs").unwrap());
-        }).unwrap_err();
+            contract.add_access_key(
+                Base58PublicKey::try_from("ed25519:CFsEoaPTVugh1anqG8JpiGzpFHs").unwrap(),
+            );
+        })
+        .unwrap_err();
     }
 }
