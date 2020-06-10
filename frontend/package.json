@@ -7,7 +7,7 @@
     "@testing-library/jest-dom": "^5.9.0",
     "@testing-library/react": "^9.3.2",
     "@testing-library/user-event": "^11.4.0",
-    "bn.js": "^5.1.1",
+    "bn.js": "^5.1.2",
     "near-api-js": "^0.25.1",
     "react": "^16.13.1",
     "react-dom": "^16.13.1",
