@@ -8,7 +8,7 @@
     "@testing-library/react": "^10.4.4",
     "@testing-library/user-event": "^11.4.2",
     "bn.js": "^5.1.2",
-    "near-api-js": "^0.25.1",
+    "near-api-js": "^0.29.1",
     "react": "^16.13.1",
     "react-dom": "^16.13.1",
     "react-scripts": "3.4.1"
