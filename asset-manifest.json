@@ -1,19 +1,19 @@
 {
   "files": {
-    "main.js": "/token-printer/static/js/main.495fd62d.chunk.js",
-    "main.js.map": "/token-printer/static/js/main.495fd62d.chunk.js.map",
-    "runtime-main.js": "/token-printer/static/js/runtime-main.c3eae915.js",
-    "runtime-main.js.map": "/token-printer/static/js/runtime-main.c3eae915.js.map",
-    "static/js/2.060caa89.chunk.js": "/token-printer/static/js/2.060caa89.chunk.js",
-    "static/js/2.060caa89.chunk.js.map": "/token-printer/static/js/2.060caa89.chunk.js.map",
+    "main.js": "/token-printer/static/js/main.08307643.chunk.js",
+    "main.js.map": "/token-printer/static/js/main.08307643.chunk.js.map",
+    "runtime-main.js": "/token-printer/static/js/runtime-main.d5178142.js",
+    "runtime-main.js.map": "/token-printer/static/js/runtime-main.d5178142.js.map",
+    "static/js/2.7b8bd428.chunk.js": "/token-printer/static/js/2.7b8bd428.chunk.js",
+    "static/js/2.7b8bd428.chunk.js.map": "/token-printer/static/js/2.7b8bd428.chunk.js.map",
     "index.html": "/token-printer/index.html",
-    "precache-manifest.05d95e584f821473b3795db7dfaba6ec.js": "/token-printer/precache-manifest.05d95e584f821473b3795db7dfaba6ec.js",
+    "precache-manifest.a34de1a8e26d5f426f0ca4d1fd7d24af.js": "/token-printer/precache-manifest.a34de1a8e26d5f426f0ca4d1fd7d24af.js",
     "service-worker.js": "/token-printer/service-worker.js",
-    "static/js/2.060caa89.chunk.js.LICENSE.txt": "/token-printer/static/js/2.060caa89.chunk.js.LICENSE.txt"
+    "static/js/2.7b8bd428.chunk.js.LICENSE.txt": "/token-printer/static/js/2.7b8bd428.chunk.js.LICENSE.txt"
   },
   "entrypoints": [
-    "static/js/runtime-main.c3eae915.js",
-    "static/js/2.060caa89.chunk.js",
-    "static/js/main.495fd62d.chunk.js"
+    "static/js/runtime-main.d5178142.js",
+    "static/js/2.7b8bd428.chunk.js",
+    "static/js/main.08307643.chunk.js"
   ]
 }
