@@ -255,7 +255,7 @@ class App extends React.Component {
     return (
       <div>
         <div>
-          <h1>Token Printer</h1>
+          <h1>Token Printer (testnet)</h1>
           <div>
             <img src="https://media2.giphy.com/media/3o6Zt3AX5mSM29lGUw/source.gif" alt="Yo, Cash"/>
           </div>
