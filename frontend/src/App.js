@@ -56,10 +56,10 @@ class App extends React.Component {
 
   async initNear() {
     const nearConfig = {
-      networkId: 'default',
-      nodeUrl: 'https://rpc.nearprotocol.com',
+      networkId: 'testnet',
+      nodeUrl: 'https://rpc.testnet.near.org',
       contractName: FaucetName,
-      walletUrl: 'https://wallet.nearprotocol.com',
+      walletUrl: 'https://wallet.testnet.near.org',
     };
     const keyStore = new nearAPI.keyStores.BrowserLocalStorageKeyStore();
     const near = await nearAPI.connect(Object.assign({ deps: { keyStore } }, nearConfig));
